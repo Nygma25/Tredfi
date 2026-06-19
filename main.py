@@ -23,12 +23,19 @@ subscribers = set()
 DATA_FILE = "config.json"
 MODE = "conservative"
 
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        config = json.load(f)
-        SYMBOLS = config.get("symbols", [])
-        MODE = config.get("mode", "conservative")
+# Инициализация SYMBOLS
+SYMBOLS = []
 
+if os.path.exists(DATA_FILE):
+    try:
+        with open(DATA_FILE, "r") as f:
+            config = json.load(f)
+            SYMBOLS = config.get("symbols", [])
+            MODE = config.get("mode", "conservative")
+    except:
+        pass
+
+# Если список пустой — заполняем по умолчанию
 if not SYMBOLS:
     SYMBOLS = [
         "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
@@ -178,5 +185,5 @@ def addpair(message):
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Бот с 26 парами запущен!")
+    print("🤖 Бот успешно запущен!")
     bot.infinity_polling()
