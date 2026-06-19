@@ -1,6 +1,6 @@
 pyTelegramBotAPI==4.22.1
-ccxt>=4.4.0
-pandas>=2.2.0
-pandas-ta>=0.3.14b
+ccxt
+pandas
+pandas-ta
 python-dotenv
 sqlalchemy
