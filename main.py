@@ -8,7 +8,7 @@ import os
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
@@ -21,7 +21,7 @@ subscribers = set()
 
 # ================= НАСТРОЙКИ =================
 DATA_FILE = "config.json"
-MODE = "conservative"  # conservative / aggressive
+MODE = "conservative"
 
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
@@ -66,39 +66,15 @@ def get_signal(df, symbol):
     volume = float(last['volume'])
 
     # Индикаторы
-    df['ema9'] = ta.ema(df['close'], 9)
-    df['ema21'] = ta.ema(df['close'], 21)
-    df['rsi'] = ta.rsi(df['close'], 14)
-    df['atr'] = ta.atr(df['high'], df['low'], df['close'], 14)
-    df['supertrend'] = ta.supertrend(df['high'], df['low'], df['close'], 10, 3)['SUPERTd_10_3.0']
+    df['ema9'] = ta.ema(df['close'], length=9)
+    df['ema21'] = ta.ema(df['close'], length=21)
+    df['rsi'] = ta.rsi(df['close'], length=14)
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+    try:
+        st = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
+        df['supertrend'] = st['SUPERTd_10_3.0']
+    except:
+        df['supertrend'] = 0
 
     last = df.iloc[-1]
     prev = df.iloc[-2]
-
-    direction = None
-    strategy = "MULTI"
-
-    # Основное условие
-    if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and 
-        last['supertrend'] == 1 and last['rsi'] > 52):
-        direction = "LONG"
-    elif (prev['ema9'] > prev['ema21'] and last['ema9'] < last['ema21'] and 
-          last['supertrend'] == -1 and last['rsi'] < 48):
-        direction = "SHORT"
-
-    if not direction:
-        return None
-
-    # Фильтр агрессивности
-    if MODE == "conservative" and abs(last['rsi'] - 50) < 8:
-        return None
-
-    atr = float(last['atr']) if not pd.isna(last['atr']) else price * 0.012
-    sl = round(price - atr * 1.8 if direction == "LONG" else price + atr * 1.8, 4)
-    tp = round(price + atr * 3.6 if direction == "LONG" else price - atr * 3.6, 4)
-
-    text = f"""
-🚨 <b>BYBIT FUTURES</b> 🚨
-
-<b>{symbol}</b> — <b>{direction}</b>
-Стратегия: {
