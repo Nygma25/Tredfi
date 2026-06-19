@@ -26,10 +26,18 @@ MODE = "conservative"
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         config = json.load(f)
-        SYMBOLS = config.get("symbols", ["BTC/USDT", "ETH/USDT", "SOL/USDT"])
+        SYMBOLS = config.get("symbols", [])
         MODE = config.get("mode", "conservative")
-else:
-    SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
+
+if not SYMBOLS:
+    SYMBOLS = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+        "TON/USDT", "AVAX/USDT", "NEAR/USDT", "LINK/USDT", "SUI/USDT",
+        "ADA/USDT", "BNB/USDT", "TRX/USDT", "PEPE/USDT", "WIF/USDT",
+        "ARB/USDT", "OP/USDT", "HBAR/USDT", "KAS/USDT", "BONK/USDT",
+        "POPCAT/USDT", "SHIB/USDT", "FLOKI/USDT", "BRETT/USDT", 
+        "TIA/USDT", "SEI/USDT"
+    ]
     with open(DATA_FILE, "w") as f:
         json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
 
@@ -63,13 +71,12 @@ def get_signal(df, symbol):
     last = df.iloc[-1]
     prev = df.iloc[-2]
     price = float(last['close'])
-    volume = float(last['volume'])
 
-    # Индикаторы
     df['ema9'] = ta.ema(df['close'], length=9)
     df['ema21'] = ta.ema(df['close'], length=21)
     df['rsi'] = ta.rsi(df['close'], length=14)
     df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+    
     try:
         st = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=3)
         df['supertrend'] = st['SUPERTd_10_3.0']
@@ -80,8 +87,6 @@ def get_signal(df, symbol):
     prev = df.iloc[-2]
 
     direction = None
-    strategy = "MULTI"
-
     if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and 
         last['supertrend'] == 1 and last['rsi'] > 52):
         direction = "LONG"
@@ -100,22 +105,20 @@ def get_signal(df, symbol):
     tp = round(price + atr * 3.6 if direction == "LONG" else price - atr * 3.6, 4)
 
     text = f"""
-🚨 <b>BYBIT FUTURES</b> 🚨
+🚨 <b>BYBIT FUTURES СИГНАЛ</b> 🚨
 
 <b>{symbol}</b> — <b>{direction}</b>
-Стратегия: {strategy}
 Цена: <b>{price:.4f}</b>
 SL: <b>{sl}</b>
 TP: <b>{tp}</b>
-RSI: {last['rsi']:.1f} | ST: {'Bull' if last.get('supertrend') == 1 else 'Bear'}
+RSI: {last['rsi']:.1f}
 Режим: {MODE.upper()}
 Время: {datetime.now().strftime("%d.%m %H:%M")}
     """.strip()
 
-    # Сохранение сигнала
     try:
         session = Session()
-        session.add(Signal(symbol=symbol, direction=direction, price=price, strategy=strategy, mode=MODE))
+        session.add(Signal(symbol=symbol, direction=direction, price=price, strategy="MULTI", mode=MODE))
         session.commit()
     except:
         pass
@@ -137,8 +140,8 @@ def monitor():
                             bot.send_message(uid, signal, parse_mode='HTML')
                         except:
                             subscribers.discard(uid)
-            except Exception as e:
-                print(f"Ошибка {symbol}: {e}")
+            except:
+                pass
             time.sleep(3)
         time.sleep(CHECK_INTERVAL)
 
@@ -146,12 +149,7 @@ def monitor():
 @bot.message_handler(commands=['start'])
 def start(message):
     subscribers.add(message.chat.id)
-    bot.reply_to(message, "✅ Вы подписались на улучшенные Bybit Futures сигналы!")
-
-@bot.message_handler(commands=['stop'])
-def stop(message):
-    subscribers.discard(message.chat.id)
-    bot.reply_to(message, "❌ Отписка выполнена.")
+    bot.reply_to(message, "✅ Подписка активна! Хорошей прибыли 💰")
 
 @bot.message_handler(commands=['status'])
 def status(message):
@@ -159,44 +157,26 @@ def status(message):
 
 @bot.message_handler(commands=['pairs'])
 def pairs(message):
-    text = "📋 Текущие пары:\n\n" + "\n".join(SYMBOLS)
+    text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
     bot.reply_to(message, text)
 
 @bot.message_handler(commands=['addpair'])
 def addpair(message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id != ADMIN_ID: 
         return bot.reply_to(message, "⛔ Только админ")
     try:
         pair = message.text.split()[1].upper()
         if '/' not in pair: pair += "/USDT"
         if pair not in SYMBOLS:
             SYMBOLS.append(pair)
-            save_config()
+            with open(DATA_FILE, "w") as f:
+                json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
             bot.reply_to(message, f"✅ Добавлена: {pair}")
-        else:
-            bot.reply_to(message, "Уже есть")
     except:
-        bot.reply_to(message, "Формат: /addpair SOL")
+        bot.reply_to(message, "Формат: /addpair POPCAT")
 
-@bot.message_handler(commands=['removepair'])
-def removepair(message):
-    if message.from_user.id != ADMIN_ID: return
-    try:
-        pair = message.text.split()[1].upper()
-        if pair in SYMBOLS:
-            SYMBOLS.remove(pair)
-            save_config()
-            bot.reply_to(message, f"✅ Удалена: {pair}")
-    except:
-        bot.reply_to(message, "Формат: /removepair BTC")
-
-def save_config():
-    with open(DATA_FILE, "w") as f:
-        json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
-
-# ================= ЗАПУСК =================
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Улучшенный бот запущен!")
+    print("🤖 Бот с 26 парами запущен!")
     bot.infinity_polling()
