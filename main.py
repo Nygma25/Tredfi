@@ -116,5 +116,18 @@ def handle_commands(message):
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
+
     print("🤖 Бот запущен с меню кнопок!")
-    bot.infinity_polling()
+
+    try:
+        bot.remove_webhook()
+        time.sleep(2)
+
+        bot.infinity_polling(
+            timeout=60,
+            long_polling_timeout=60,
+            skip_pending=True
+        )
+
+    except Exception as e:
+        print(f"Ошибка polling: {e}")
