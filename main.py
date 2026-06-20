@@ -8,8 +8,6 @@ import os
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
@@ -36,13 +34,11 @@ else:
 TIMEFRAME = "15m"
 CHECK_INTERVAL = 600
 
-# ←←← ИЗМЕНИЛИ НА BINANCE ←←←
-exchange = ccxt.binance({
+# OKX - должен работать лучше из Азербайджана
+exchange = ccxt.okx({
     'enableRateLimit': True,
     'options': {'defaultType': 'future'}
 })
-
-# ... (остальной код остается таким же)
 
 # ================= AGGRESSIVE СТРАТЕГИЯ =================
 def get_signal(df, symbol):
@@ -64,25 +60,19 @@ def get_signal(df, symbol):
         df['supertrend'] = 0
 
     direction = None
-    if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and last['rsi'] > 48):
+    if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and last['rsi'] > 45):
         direction = "LONG"
-    elif (prev['ema9'] > prev['ema21'] and last['ema9'] < last['ema21'] and last['rsi'] < 52):
+    elif (prev['ema9'] > prev['ema21'] and last['ema9'] < last['ema21'] and last['rsi'] < 55):
         direction = "SHORT"
 
     if not direction:
         return None
 
-    atr = float(last.get('atr', price * 0.01))
-    sl = round(price - atr * 1.5 if direction == "LONG" else price + atr * 1.5, 4)
-    tp = round(price + atr * 3.0 if direction == "LONG" else price - atr * 3.0, 4)
-
     text = f"""
-🚨 <b>AGGRESSIVE СИГНАЛ</b> 🚨
+🚨 <b>AGGRESSIVE OKX СИГНАЛ</b> 🚨
 
 <b>{symbol}</b> — <b>{direction}</b>
 Цена: <b>{price:.4f}</b>
-SL: <b>{sl}</b>
-TP: <b>{tp}</b>
 RSI: {last['rsi']:.1f}
 Время: {datetime.now().strftime("%H:%M")}
     """.strip()
@@ -91,11 +81,11 @@ RSI: {last['rsi']:.1f}
 
 # ================= МОНИТОРИНГ =================
 def monitor():
-    print(f"🚀 AGGRESSIVE Binance запущен | Пар: {len(SYMBOLS)}")
+    print(f"🚀 OKX AGGRESSIVE запущен | Пар: {len(SYMBOLS)}")
     while True:
         for symbol in SYMBOLS:
             try:
-                bars = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=120)
+                bars = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=100)
                 df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 signal = get_signal(df, symbol)
                 if signal:
@@ -109,10 +99,14 @@ def monitor():
 @bot.message_handler(commands=['start'])
 def start(message):
     subscribers.add(message.chat.id)
-    bot.reply_to(message, "✅ Aggressive режим на **Binance** запущен!")
+    bot.reply_to(message, "✅ OKX Aggressive режим запущен!\nСигналы должны приходить чаще.")
+
+@bot.message_handler(commands=['status'])
+def status(message):
+    bot.reply_to(message, "🟢 OKX Aggressive\nПары: " + str(len(SYMBOLS)))
 
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Бот запущен!")
+    print("🤖 Бот на OKX запущен!")
     bot.infinity_polling()
