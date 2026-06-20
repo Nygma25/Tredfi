@@ -29,33 +29,20 @@ if os.path.exists(DATA_FILE):
         SYMBOLS = config.get("symbols", [])
         MODE = config.get("mode", "aggressive")
 else:
-    SYMBOLS = [
-        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
-        "TON/USDT", "AVAX/USDT", "SUI/USDT", "WIF/USDT", "PEPE/USDT",
-        "BONK/USDT", "POPCAT/USDT", "SHIB/USDT"
-    ]
+    SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "TON/USDT", "SUI/USDT", "WIF/USDT"]
     with open(DATA_FILE, "w") as f:
         json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
 
 TIMEFRAME = "15m"
-CHECK_INTERVAL = 600  # 10 минут
+CHECK_INTERVAL = 600
 
-exchange = ccxt.bybit({'enableRateLimit': True, 'options': {'defaultType': 'future'}})
+# ←←← ИЗМЕНИЛИ НА BINANCE ←←←
+exchange = ccxt.binance({
+    'enableRateLimit': True,
+    'options': {'defaultType': 'future'}
+})
 
-# База данных
-Base = declarative_base()
-engine = create_engine('sqlite:///signals.db', echo=False)
-Session = sessionmaker(bind=engine)
-
-class Signal(Base):
-    __tablename__ = 'signals'
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    symbol = Column(String)
-    direction = Column(String)
-    price = Column(Float)
-
-Base.metadata.create_all(engine)
+# ... (остальной код остается таким же)
 
 # ================= AGGRESSIVE СТРАТЕГИЯ =================
 def get_signal(df, symbol):
@@ -77,8 +64,6 @@ def get_signal(df, symbol):
         df['supertrend'] = 0
 
     direction = None
-
-    # Агрессивные условия
     if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and last['rsi'] > 48):
         direction = "LONG"
     elif (prev['ema9'] > prev['ema21'] and last['ema9'] < last['ema21'] and last['rsi'] < 52):
@@ -102,18 +87,11 @@ RSI: {last['rsi']:.1f}
 Время: {datetime.now().strftime("%H:%M")}
     """.strip()
 
-    try:
-        session = Session()
-        session.add(Signal(symbol=symbol, direction=direction, price=price))
-        session.commit()
-    except:
-        pass
-
     return text
 
 # ================= МОНИТОРИНГ =================
 def monitor():
-    print(f"🚀 AGGRESSIVE режим запущен | Пар: {len(SYMBOLS)}")
+    print(f"🚀 AGGRESSIVE Binance запущен | Пар: {len(SYMBOLS)}")
     while True:
         for symbol in SYMBOLS:
             try:
@@ -122,32 +100,19 @@ def monitor():
                 signal = get_signal(df, symbol)
                 if signal:
                     for uid in list(subscribers):
-                        try:
-                            bot.send_message(uid, signal, parse_mode='HTML')
-                        except:
-                            subscribers.discard(uid)
+                        bot.send_message(uid, signal, parse_mode='HTML')
             except Exception as e:
                 print(f"Ошибка {symbol}: {e}")
             time.sleep(3)
         time.sleep(CHECK_INTERVAL)
 
-# ================= КОМАНДЫ =================
 @bot.message_handler(commands=['start'])
 def start(message):
     subscribers.add(message.chat.id)
-    bot.reply_to(message, "✅ Вы в **AGGRESSIVE** режиме!\nСигналы будут приходить чаще.")
-
-@bot.message_handler(commands=['status'])
-def status(message):
-    bot.reply_to(message, f"🟢 Aggressive режим\nПары: {len(SYMBOLS)}\nПроверка каждые 10 минут")
-
-@bot.message_handler(commands=['pairs'])
-def pairs(message):
-    text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
-    bot.reply_to(message, text)
+    bot.reply_to(message, "✅ Aggressive режим на **Binance** запущен!")
 
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Aggressive бот запущен!")
+    print("🤖 Бот запущен!")
     bot.infinity_polling()
