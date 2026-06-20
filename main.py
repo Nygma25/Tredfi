@@ -1,5 +1,4 @@
 import telebot
-from telebot import types
 import ccxt
 import pandas as pd
 import pandas_ta as ta
@@ -20,31 +19,30 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 bot = telebot.TeleBot(TOKEN)
 subscribers = set()
 
-# ================= НАСТРОЙКИ =================
+# ================= AGGRESSIVE НАСТРОЙКИ =================
 DATA_FILE = "config.json"
-MODE = "conservative"
+MODE = "aggressive"   # ← Изменено на aggressive
 
-SYMBOLS = []
 if os.path.exists(DATA_FILE):
-    try:
-        with open(DATA_FILE, "r") as f:
-            config = json.load(f)
-            SYMBOLS = config.get("symbols", [])
-            MODE = config.get("mode", "conservative")
-    except:
-        pass
-
-if not SYMBOLS:
-    SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "TON/USDT", "SUI/USDT", "WIF/USDT"]
+    with open(DATA_FILE, "r") as f:
+        config = json.load(f)
+        SYMBOLS = config.get("symbols", [])
+        MODE = config.get("mode", "aggressive")
+else:
+    SYMBOLS = [
+        "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+        "TON/USDT", "AVAX/USDT", "SUI/USDT", "WIF/USDT", "PEPE/USDT",
+        "BONK/USDT", "POPCAT/USDT", "SHIB/USDT"
+    ]
     with open(DATA_FILE, "w") as f:
         json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
 
 TIMEFRAME = "15m"
-CHECK_INTERVAL = 900
+CHECK_INTERVAL = 600  # проверка каждые 10 минут
 
 exchange = ccxt.bybit({'enableRateLimit': True, 'options': {'defaultType': 'future'}})
 
-# ================= БАЗА =================
+# База данных
 Base = declarative_base()
 engine = create_engine('sqlite:///signals.db', echo=False)
 Session = sessionmaker(bind=engine)
@@ -59,75 +57,66 @@ class Signal(Base):
 
 Base.metadata.create_all(engine)
 
-# ================= КНОПКИ =================
-def main_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📊 Статус", callback_data="status"),
-        types.InlineKeyboardButton("📋 Пары", callback_data="pairs"),
-        types.InlineKeyboardButton("🔔 Установить алерт", callback_data="alert"),
-        types.InlineKeyboardButton("📈 Мои алерты", callback_data="myalerts")
-    )
-    markup.add(
-        types.InlineKeyboardButton("➕ Добавить пару", callback_data="addpair"),
-        types.InlineKeyboardButton("🗑 Удалить пару", callback_data="removepair"),
-        types.InlineKeyboardButton("📊 Статистика", callback_data="stats")
-    )
-    return markup
+# ================= AGGRESSIVE СТРАТЕГИЯ =================
+def get_signal(df, symbol):
+    if len(df) < 60:
+        return None
+    
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+    price = float(last['close'])
 
-# ================= ОБРАБОТКА КНОПОК =================
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    if call.data == "status":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, f"🟢 Бот активен\nПары: {len(SYMBOLS)}\nРежим: {MODE.upper()}")
-    elif call.data == "pairs":
-        bot.answer_callback_query(call.id)
-        text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
-        bot.send_message(call.message.chat.id, text)
-    elif call.data == "alert":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "Отправь команду:\n/alert BTC 68000")
-    elif call.data == "myalerts":
-        bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "Покажу твои алерты (/myalerts)")
-    # Можно добавить остальные обработчики позже
+    df['ema9'] = ta.ema(df['close'], length=9)
+    df['ema21'] = ta.ema(df['close'], length=21)
+    df['rsi'] = ta.rsi(df['close'], length=14)
+    
+    try:
+        st = ta.supertrend(df['high'], df['low'], df['close'], length=10, multiplier=2.5)
+        df['supertrend'] = st['SUPERTd_10_2.5']
+    except:
+        df['supertrend'] = 0
 
-# ================= МОНИТОРИНГ (упрощён) =================
-def monitor():
-    print("🚀 Бот с кнопками запущен!")
-    while True:
-        # Здесь остаётся логика сигналов (как раньше)
-        time.sleep(CHECK_INTERVAL)
+    direction = None
 
-# ================= КОМАНДЫ =================
-@bot.message_handler(commands=['start'])
-def start(message):
-    subscribers.add(message.chat.id)
-    bot.send_message(message.chat.id, 
-                     "✅ Добро пожаловать в авто-сигнал бот!\n\nВыбери действие ниже 👇", 
-                     reply_markup=main_menu())
+    # Более агрессивные условия
+    if (prev['ema9'] < prev['ema21'] and last['ema9'] > last['ema21'] and last['rsi'] > 48):
+        direction = "LONG"
+    elif (prev['ema9'] > prev['ema21'] and last['ema9'] < last['ema21'] and last['rsi'] < 52):
+        direction = "SHORT"
 
-@bot.message_handler(commands=['status', 'pairs', 'alert'])
-def handle_commands(message):
-    # Можно оставить старые команды
-    bot.send_message(message.chat.id, "Используй кнопки ниже", reply_markup=main_menu())
+    if not direction:
+        return None
 
-if __name__ == "__main__":
-    thread = threading.Thread(target=monitor, daemon=True)
-    thread.start()
+    atr = float(last.get('atr', price * 0.01))
+    sl = round(price - atr * 1.5 if direction == "LONG" else price + atr * 1.5, 4)
+    tp = round(price + atr * 3.0 if direction == "LONG" else price - atr * 3.0, 4)
 
-    print("🤖 Бот запущен с меню кнопок!")
+    text = f"""
+🚨 <b>AGGRESSIVE СИГНАЛ</b> 🚨
+
+<b>{symbol}</b> — <b>{direction}</b>
+Цена: <b>{price:.4f}</b>
+SL: <b>{sl}</b>
+TP: <b>{tp}</b>
+RSI: {last['rsi']:.1f}
+Режим: AGGRESSIVE
+Время: {datetime.now().strftime("%H:%M")}
+    """.strip()
 
     try:
-        bot.remove_webhook()
-        time.sleep(2)
+        session = Session()
+        session.add(Signal(symbol=symbol, direction=direction, price=price))
+        session.commit()
+    except:
+        pass
 
-        bot.infinity_polling(
-            timeout=60,
-            long_polling_timeout=60,
-            skip_pending=True
-        )
+    return text
 
-    except Exception as e:
-        print(f"Ошибка polling: {e}")
+# ================= МОНИТОРИНГ =================
+def monitor():
+    print(f"🚀 AGGRESSIVE режим запущен | Пар: {len(SYMBOLS)}")
+    while True:
+        for symbol in SYMBOLS:
+            try:
+                bars = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=120)
+                df = pd.DataFrame
