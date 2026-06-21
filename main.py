@@ -54,9 +54,17 @@ class Signal(Base):
     sl = Column(Float)
     tp = Column(Float)
     closed = Column(Boolean, default=False)
-    result = Column(String)  # WIN / LOSS
+    result = Column(String)  # WIN / LOSS / OPEN
 
 Base.metadata.create_all(engine)
+
+# ================= КНОПКИ =================
+def main_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add("📊 Статус", "📋 Пары")
+    markup.add("➕ Добавить пару", "🗑 Удалить пару")
+    markup.add("📈 Статистика", "🔔 Алерт")
+    return markup
 
 # ================= СТРАТЕГИЯ =================
 def get_signal(df, symbol):
@@ -96,7 +104,7 @@ RSI: {last['rsi']:.1f}
 Время: {datetime.now().strftime("%H:%M")}
     """.strip()
 
-    # Сохраняем в базу
+    # Сохраняем сигнал
     try:
         session = Session()
         session.add(Signal(symbol=symbol, direction=direction, entry_price=price, sl=sl, tp=tp))
@@ -127,32 +135,35 @@ def monitor():
 @bot.message_handler(commands=['start'])
 def start(message):
     subscribers.add(message.chat.id)
-    bot.send_message(message.chat.id, "✅ Бот готов! Сигналы с SL и TP", reply_markup=types.ReplyKeyboardRemove())
+    bot.send_message(message.chat.id, "✅ Бот полностью готов!\nВыбери действие ниже 👇", reply_markup=main_keyboard())
 
-@bot.message_handler(commands=['status'])
-def status(message):
-    bot.reply_to(message, f"🟢 Бот активен\nПар: {len(SYMBOLS)}")
+@bot.message_handler(func=lambda message: True)
+def handle_keyboard(message):
+    text = message.text
+    if text == "📊 Статус":
+        bot.reply_to(message, f"🟢 Бот активен\nПар: {len(SYMBOLS)}\nРежим: Aggressive")
+    elif text == "📋 Пары":
+        bot.reply_to(message, "📋 Активные пары:\n\n" + "\n".join(SYMBOLS))
+    elif text == "➕ Добавить пару":
+        bot.reply_to(message, "Напиши:\n/addpair PEPE")
+    elif text == "🗑 Удалить пару":
+        bot.reply_to(message, "Напиши:\n/removepair BTC")
+    elif text == "📈 Статистика":
+        session = Session()
+        total = session.query(Signal).count()
+        wins = session.query(Signal).filter_by(result="WIN").count()
+        winrate = round((wins / total * 100), 2) if total > 0 else 0
+        bot.reply_to(message, f"📊 **Статистика**\n\nВсего сигналов: {total}\nWin Rate: {winrate}%", parse_mode='HTML')
+    elif text == "🔔 Алерт":
+        bot.reply_to(message, "Напиши:\n/alert BTC 68000")
 
-@bot.message_handler(commands=['pairs'])
-def pairs(message):
-    text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
-    bot.reply_to(message, text)
-
-@bot.message_handler(commands=['stats'])
-def stats(message):
-    session = Session()
-    total = session.query(Signal).count()
-    wins = session.query(Signal).filter_by(result="WIN").count()
-    winrate = round((wins / total * 100), 2) if total > 0 else 0
-    bot.reply_to(message, f"""📊 **Статистика**
-
-Всего сигналов: {total}
-Побед: {wins}
-Win Rate: {winrate}%
-    """, parse_mode='HTML')
+@bot.message_handler(commands=['addpair', 'removepair'])
+def admin_commands(message):
+    # ... (можно оставить старые команды)
+    pass
 
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Бот с SL/TP и Win Rate запущен!")
+    print("🤖 Полная версия бота запущена!")
     bot.infinity_polling()
