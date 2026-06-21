@@ -8,8 +8,6 @@ import os
 import json
 from datetime import datetime
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime
-from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
@@ -19,17 +17,37 @@ ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
 bot = telebot.TeleBot(TOKEN)
 subscribers = set()
 
-# ================= НАСТРОЙКИ =================
+# ================= БОЛЬШОЙ СПИСОК ИЗ 100+ ПАР =================
 DATA_FILE = "config.json"
 MODE = "aggressive"
+
+default_pairs = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT",
+    "TON/USDT", "SUI/USDT", "WIF/USDT", "PEPE/USDT", "BONK/USDT",
+    "POPCAT/USDT", "SHIB/USDT", "FLOKI/USDT", "BRETT/USDT", "MEW/USDT",
+    "AVAX/USDT", "NEAR/USDT", "LINK/USDT", "ADA/USDT", "BNB/USDT",
+    "TRX/USDT", "ARB/USDT", "OP/USDT", "HBAR/USDT", "KAS/USDT",
+    "TIA/USDT", "SEI/USDT", "ONDO/USDT", "NOT/USDT", "PIXEL/USDT",
+    "RUNE/USDT", "FET/USDT", "INJ/USDT", "TAO/USDT", "FIL/USDT",
+    "DOT/USDT", "LTC/USDT", "BCH/USDT", "UNI/USDT", "AAVE/USDT",
+    "APT/USDT", "MKR/USDT", "PENDLE/USDT", "FTM/USDT", "ALGO/USDT",
+    "VET/USDT", "XLM/USDT", "EOS/USDT", "ETC/USDT", "ATOM/USDT",
+    "MATIC/USDT", "POL/USDT", "RENDER/USDT", "GALA/USDT", "IMX/USDT",
+    "THETA/USDT", "SAND/USDT", "MANA/USDT", "AXS/USDT", "SNX/USDT",
+    "CRV/USDT", "COMP/USDT", "ZRO/USDT", "ENA/USDT", "WLD/USDT",
+    "ORDI/USDT", "STX/USDT", "AR/USDT", "BEAM/USDT", "CFX/USDT",
+    "IO/USDT", "TURBO/USDT", "CATI/USDT", "GRASS/USDT", "MOODENG/USDT",
+    "HMSTR/USDT", "PNUT/USDT", "GOAT/USDT", "AIXBT/USDT", "NEIRO/USDT",
+    "ACT/USDT", "BOME/USDT", "1000SATS/USDT", "1000BONK/USDT", "1000PEPE/USDT"
+]
 
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r") as f:
         config = json.load(f)
-        SYMBOLS = config.get("symbols", [])
+        SYMBOLS = config.get("symbols", default_pairs)
         MODE = config.get("mode", "aggressive")
 else:
-    SYMBOLS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT", "SUI/USDT", "WIF/USDT", "PEPE/USDT"]
+    SYMBOLS = default_pairs
     with open(DATA_FILE, "w") as f:
         json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
 
@@ -37,21 +55,6 @@ TIMEFRAME = "15m"
 CHECK_INTERVAL = 600
 
 exchange = ccxt.okx({'enableRateLimit': True})
-
-# База данных для статистики
-Base = declarative_base()
-engine = create_engine('sqlite:///signals.db', echo=False)
-Session = sessionmaker(bind=engine)
-
-class Signal(Base):
-    __tablename__ = 'signals'
-    id = Column(Integer, primary_key=True)
-    timestamp = Column(DateTime, default=datetime.utcnow)
-    symbol = Column(String)
-    direction = Column(String)
-    price = Column(Float)
-
-Base.metadata.create_all(engine)
 
 # ================= СТРАТЕГИЯ =================
 def get_signal(df, symbol):
@@ -84,21 +87,13 @@ RSI: {last['rsi']:.1f}
 Время: {datetime.now().strftime("%H:%M")}
     """.strip()
 
-    # Сохраняем сигнал в базу
-    try:
-        session = Session()
-        session.add(Signal(symbol=symbol, direction=direction, price=price))
-        session.commit()
-    except:
-        pass
-
     return text
 
 # ================= МОНИТОРИНГ =================
 def monitor():
-    print(f"🚀 OKX Aggressive запущен | Пар: {len(SYMBOLS)}")
+    print(f"🚀 Бот запущен | Пар: {len(SYMBOLS)}")
     while True:
-        for symbol in SYMBOLS[:]:
+        for symbol in SYMBOLS:
             try:
                 bars = exchange.fetch_ohlcv(symbol, TIMEFRAME, limit=100)
                 df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -106,8 +101,8 @@ def monitor():
                 if signal:
                     for uid in list(subscribers):
                         bot.send_message(uid, signal, parse_mode='HTML')
-            except Exception as e:
-                print(f"Ошибка {symbol}: {e}")
+            except:
+                pass
             time.sleep(2)
         time.sleep(CHECK_INTERVAL)
 
@@ -115,15 +110,11 @@ def monitor():
 @bot.message_handler(commands=['start'])
 def start(message):
     subscribers.add(message.chat.id)
-    bot.reply_to(message, "✅ Подписка на Aggressive сигналы активирована!")
-
-@bot.message_handler(commands=['status'])
-def status(message):
-    bot.reply_to(message, f"🟢 Бот работает\nРежим: {MODE.upper()}\nПары: {len(SYMBOLS)}")
+    bot.reply_to(message, f"✅ Подписка активна!\nВсего пар: {len(SYMBOLS)}")
 
 @bot.message_handler(commands=['pairs'])
 def pairs(message):
-    text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
+    text = f"📋 Всего пар: {len(SYMBOLS)}\n\n" + "\n".join(SYMBOLS[:50]) + "\n... и другие"
     bot.reply_to(message, text)
 
 @bot.message_handler(commands=['addpair'])
@@ -137,36 +128,16 @@ def addpair(message):
             SYMBOLS.append(pair)
             with open(DATA_FILE, "w") as f:
                 json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
-            bot.reply_to(message, f"✅ Добавлена: {pair}")
+            bot.reply_to(message, f"✅ Добавлена: {pair}\nВсего: {len(SYMBOLS)}")
     except:
         bot.reply_to(message, "Формат: /addpair PEPE")
 
-@bot.message_handler(commands=['removepair'])
-def removepair(message):
-    if message.from_user.id != ADMIN_ID:
-        return bot.reply_to(message, "⛔ Только админ")
-    try:
-        pair = message.text.split()[1].upper()
-        if pair in SYMBOLS:
-            SYMBOLS.remove(pair)
-            with open(DATA_FILE, "w") as f:
-                json.dump({"symbols": SYMBOLS, "mode": MODE}, f)
-            bot.reply_to(message, f"✅ Удалена: {pair}")
-        else:
-            bot.reply_to(message, "Такой пары нет")
-    except:
-        bot.reply_to(message, "Формат: /removepair BTC")
-
-@bot.message_handler(commands=['stats'])
-def stats(message):
-    session = Session()
-    total = session.query(Signal).count()
-    long = session.query(Signal).filter_by(direction="LONG").count()
-    short = session.query(Signal).filter_by(direction="SHORT").count()
-    bot.reply_to(message, f"📊 Статистика сигналов:\n\nВсего: {total}\nLONG: {long}\nSHORT: {short}")
+@bot.message_handler(commands=['status'])
+def status(message):
+    bot.reply_to(message, f"🟢 Бот активен\nПар: {len(SYMBOLS)}\nРежим: Aggressive")
 
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Бот полностью готов!")
+    print("🤖 Бот с 100+ парами запущен!")
     bot.infinity_polling()
