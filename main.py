@@ -37,34 +37,12 @@ CHECK_INTERVAL = 600
 
 exchange = ccxt.okx({'enableRateLimit': True})
 
-# ================= КНОПКИ =================
-def main_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("📊 Статус", callback_data="status"),
-        types.InlineKeyboardButton("📋 Пары", callback_data="pairs")
-    )
-    markup.add(
-        types.InlineKeyboardButton("➕ Добавить пару", callback_data="addpair"),
-        types.InlineKeyboardButton("🗑 Удалить пару", callback_data="removepair")
-    )
+# ================= КНОПКИ ВНИЗУ =================
+def main_keyboard():
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add("📊 Статус", "📋 Пары")
+    markup.add("➕ Добавить пару", "🗑 Удалить пару")
     return markup
-
-# ================= ОБРАБОТКА КНОПОК =================
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    bot.answer_callback_query(call.id)
-    chat_id = call.message.chat.id
-
-    if call.data == "status":
-        bot.send_message(chat_id, f"🟢 Бот активен\nПар: {len(SYMBOLS)}\nРежим: Aggressive")
-    elif call.data == "pairs":
-        text = "📋 Активные пары:\n\n" + "\n".join(SYMBOLS)
-        bot.send_message(chat_id, text)
-    elif call.data == "addpair":
-        bot.send_message(chat_id, "Напиши:\n/addpair PEPE")
-    elif call.data == "removepair":
-        bot.send_message(chat_id, "Напиши:\n/removepair BTC")
 
 # ================= СТРАТЕГИЯ =================
 def get_signal(df, symbol):
@@ -101,7 +79,7 @@ RSI: {last['rsi']:.1f}
 
 # ================= МОНИТОРИНГ =================
 def monitor():
-    print(f"🚀 Бот с кнопками запущен | Пар: {len(SYMBOLS)}")
+    print(f"🚀 Бот с кнопками внизу запущен | Пар: {len(SYMBOLS)}")
     while True:
         for symbol in SYMBOLS:
             try:
@@ -121,11 +99,23 @@ def monitor():
 def start(message):
     subscribers.add(message.chat.id)
     bot.send_message(message.chat.id, 
-                     "✅ **Добро пожаловать!**\n\nИспользуй кнопки ниже:", 
-                     reply_markup=main_menu())
+                     "✅ **Бот готов!**\n\nВыбери действие:", 
+                     reply_markup=main_keyboard())
+
+@bot.message_handler(func=lambda message: True)
+def handle_buttons(message):
+    text = message.text
+    if text == "📊 Статус":
+        bot.reply_to(message, f"🟢 Бот активен\nПар: {len(SYMBOLS)}\nРежим: Aggressive")
+    elif text == "📋 Пары":
+        bot.reply_to(message, "📋 Активные пары:\n\n" + "\n".join(SYMBOLS))
+    elif text == "➕ Добавить пару":
+        bot.reply_to(message, "Напиши:\n/addpair PEPE")
+    elif text == "🗑 Удалить пару":
+        bot.reply_to(message, "Напиши:\n/removepair BTC")
 
 if __name__ == "__main__":
     thread = threading.Thread(target=monitor, daemon=True)
     thread.start()
-    print("🤖 Бот с меню кнопок запущен!")
+    print("🤖 Бот с постоянными кнопками внизу запущен!")
     bot.infinity_polling()
