@@ -1,4 +1,63 @@
-text = f"""
+def get_signal(df, symbol):
+    if len(df) < 210:
+        return None
+
+    # ================= INDICATORS =================
+    df['ema9'] = ta.ema(df['close'], length=9)
+    df['ema21'] = ta.ema(df['close'], length=21)
+    df['ema50'] = ta.ema(df['close'], length=50)
+    df['ema200'] = ta.ema(df['close'], length=200)
+
+    df['rsi'] = ta.rsi(df['close'], length=14)
+
+    df['atr'] = ta.atr(df['high'], df['low'], df['close'], length=14)
+
+    adx = ta.adx(df['high'], df['low'], df['close'], length=14)
+    df['adx'] = adx.iloc[:, 0]
+
+    # ================= LAST DATA =================
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    price = float(last['close'])
+    atr = float(last['atr']) if not pd.isna(last['atr']) else price * 0.015
+
+    # ================= FILTERS =================
+    trend_long = last['ema50'] > last['ema200']
+    trend_short = last['ema50'] < last['ema200']
+    strong_trend = last['adx'] > 20
+
+    direction = None
+
+    # ================= LONG =================
+    if (
+        prev['ema9'] < prev['ema21']
+        and last['ema9'] > last['ema21']
+        and last['rsi'] > 50
+        and trend_long
+        and strong_trend
+    ):
+        direction = "LONG"
+
+    # ================= SHORT =================
+    elif (
+        prev['ema9'] > prev['ema21']
+        and last['ema9'] < last['ema21']
+        and last['rsi'] < 50
+        and trend_short
+        and strong_trend
+    ):
+        direction = "SHORT"
+
+    if not direction:
+        return None
+
+    # ================= SL / TP =================
+    sl = round(price - atr * 1.8 if direction == "LONG" else price + atr * 1.8, 4)
+    tp = round(price + atr * 3.5 if direction == "LONG" else price - atr * 3.5, 4)
+
+    # ================= SIGNAL TEXT =================
+    text = f"""
 🚨 <b>PRO SIGNAL v2</b> 🚨
 
 📊 <b>{symbol}</b>
@@ -15,3 +74,23 @@ text = f"""
 
 ⏰ {datetime.now().strftime("%H:%M")}
 """.strip()
+
+    # ================= SAVE TO DB =================
+    try:
+        session = Session()
+        session.add(
+            Signal(
+                symbol=symbol,
+                direction=direction,
+                entry_price=price,
+                sl=sl,
+                tp=tp,
+                result="OPEN"
+            )
+        )
+        session.commit()
+        session.close()
+    except:
+        pass
+
+    return text
